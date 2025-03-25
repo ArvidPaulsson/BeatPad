@@ -3,52 +3,58 @@
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
+    : AudioProcessor (BusesProperties()
+#if !JucePlugin_IsMidiEffect
+    #if !JucePlugin_IsSynth
+              .withInput ("Input", juce::AudioChannelSet::stereo(), true)
+    #endif
+              .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+#endif
+      )
 {
+    mFormatManager.registerBasicFormats();
+    for (int i = 0; i < numVoices; i++)
+    {
+        mSampler.addVoice (new juce::SamplerVoice());
+    }
 }
 
 PluginProcessor::~PluginProcessor()
 {
+    mReader = nullptr;
 }
 
 //==============================================================================
 const juce::String PluginProcessor::getName() const
 {
-    return JucePlugin_Name;
+    return "BeatPad";
 }
 
 bool PluginProcessor::acceptsMidi() const
 {
-   #if JucePlugin_WantsMidiInput
+#if JucePlugin_WantsMidiInput
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 bool PluginProcessor::producesMidi() const
 {
-   #if JucePlugin_ProducesMidiOutput
+#if JucePlugin_ProducesMidiOutput
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 bool PluginProcessor::isMidiEffect() const
 {
-   #if JucePlugin_IsMidiEffect
+#if JucePlugin_IsMidiEffect
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 double PluginProcessor::getTailLengthSeconds() const
@@ -58,8 +64,8 @@ double PluginProcessor::getTailLengthSeconds() const
 
 int PluginProcessor::getNumPrograms()
 {
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
+    return 1; // NB: some hosts don't cope very well if you tell them there are 0 programs,
+        // so this should be at least 1, even if you're not really implementing programs.
 }
 
 int PluginProcessor::getCurrentProgram()
@@ -88,7 +94,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    mSampler.setCurrentPlaybackSampleRate (sampleRate);
 }
 
 void PluginProcessor::releaseResources()
@@ -99,56 +105,62 @@ void PluginProcessor::releaseResources()
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
+#if JucePlugin_IsMidiEffect
     juce::ignoreUnused (layouts);
     return true;
-  #else
+#else
     // This is the place where you check if the layout is supported.
     // In this template code we only support mono or stereo.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
 
     // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
+    #if !JucePlugin_IsSynth
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
-   #endif
+    #endif
 
     return true;
-  #endif
+#endif
 }
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                              juce::MidiBuffer& midiMessages)
+    juce::MidiBuffer& midiMessages)
 {
-    juce::ignoreUnused (midiMessages);
+    // juce::ignoreUnused (midiMessages);
+
+    midiMessages.addEvents (midiMessageQueue, 0, buffer.getNumSamples(), 0);
+    midiMessageQueue.clear();
 
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    juce::MidiMessage m;
+    juce::MidiBuffer::Iterator it { midiMessages };
+    int sample;
+
+    while (it.getNextEvent (m, sample))
     {
-        auto* channelData = buffer.getWritePointer (channel);
-        juce::ignoreUnused (channelData);
-        // ..do something to the data...
+        if (m.isNoteOn())
+        {
+            mIsNotePlayed = true;
+            std::printf ("Note played: %d, with velocity %d\n", m.getNoteNumber(), m.getVelocity());
+        }
+        else if (m.isNoteOff())
+        {
+            mIsNotePlayed = false;
+            std::printf ("Note off: %d\n", m.getNoteNumber());
+        }
     }
+
+    mSampleCount = mIsNotePlayed ? mSampleCount += buffer.getNumSamples() : 0;
+
+    mSampler.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
 }
 
 //==============================================================================
@@ -176,6 +188,90 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
     juce::ignoreUnused (data, sizeInBytes);
+}
+
+void PluginProcessor::loadFile (const juce::String& path)
+{
+    mSampler.clearSounds();
+
+    auto file = juce::File (path);
+
+    // std::unique_ptr<juce::AudioFormatReader> mReader (mFormatManager.createReaderFor (file));
+    mReader = mFormatManager.createReaderFor (file);
+
+    std::printf ("File loaded successfully: %s\n", path.toRawUTF8());
+    std::printf ("Sample length: %lld\n", mReader->lengthInSamples);
+    std::printf ("Sample rate: %.2f\n", mReader->sampleRate);
+
+    auto sampleLength = static_cast<int> (mReader->lengthInSamples);
+    waveForm.setSize (1, sampleLength);
+    mReader->read (&waveForm, 0, sampleLength, 0, true, false);
+
+    juce::BigInteger midiNoteRange;
+    midiNoteRange.setRange (0, 128, true); // Clear all notes
+
+    mSampler.addSound (new juce::SamplerSound ("Sample", *mReader, midiNoteRange, 60, 0.1, 0.1, 10));
+
+    std::printf ("Sound added to sampler. Total sounds: %d\n", mSampler.getNumSounds());
+}
+
+void PluginProcessor::loadFile (const juce::String& path, int midiNote)
+{
+    for (int i = 0; i < mSampler.getNumSounds(); ++i)
+    {
+        juce::SamplerSound* sound = dynamic_cast<juce::SamplerSound*> (mSampler.getSound (i).get());
+        if (sound)
+        {
+            // Remove any existing sound mapped to this MIDI note
+            if (sound->appliesToNote (midiNote))
+            {
+                mSampler.removeSound (i);
+                break;
+            }
+        }
+    }
+
+    auto file = juce::File (path);
+    mReader = mFormatManager.createReaderFor (file);
+
+    if (!mReader)
+    {
+        std::printf ("Error: Could not load file %s\n", path.toRawUTF8());
+        return;
+    }
+
+    std::printf ("File loaded successfully: %s\n", path.toRawUTF8());
+    std::printf ("Sample length: %lld\n", mReader->lengthInSamples);
+    std::printf ("Sample rate: %.2f\n", mReader->sampleRate);
+    std::printf ("Mapped to MIDI Note: %d\n", midiNote);
+
+    auto sampleLength = static_cast<int> (mReader->lengthInSamples);
+    auto* padWaveform = new juce::AudioBuffer<float>();
+    padWaveform->setSize (1, sampleLength);
+    mSampleWaveforms.add (padWaveform);
+    mReader->read (padWaveform, 0, sampleLength, 0, true, false);
+
+    juce::BigInteger midiNoteRange;
+    midiNoteRange.setRange (0, 128, false);
+    midiNoteRange.setBit (midiNote, true);
+
+    mSampler.addSound (new juce::SamplerSound (
+        "Sample",
+        *mReader,
+        midiNoteRange,
+        midiNote, // Root note
+        0.0, // Attack time
+        0.1, // Release time
+        10.0 // Maximum sample length
+        ));
+
+    std::printf ("Sound added to sampler. Total sounds: %d\n", mSampler.getNumSounds());
+}
+
+void PluginProcessor::addMidiMessage (const juce::MidiMessage& message)
+{
+    std::printf ("Received MIDI message: %s\n", message.getDescription().toRawUTF8());
+    midiMessageQueue.addEvent (message, 0);
 }
 
 //==============================================================================

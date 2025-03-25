@@ -1,7 +1,9 @@
 #pragma once
 
-#include "PluginProcessor.h"
+#include "BeatPad.h"
+#include "BeatPadContainer.h"
 #include "BinaryData.h"
+#include "PluginProcessor.h"
 #include "melatonin_inspector/melatonin_inspector.h"
 
 //==============================================================================
@@ -19,7 +21,7 @@ private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     PluginProcessor& processorRef;
-    std::unique_ptr<melatonin::Inspector> inspector;
-    juce::TextButton inspectButton { "Inspect the UI" };
+    // BeatPad beatPad;
+    BeatPadContainer beatPadContainer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
