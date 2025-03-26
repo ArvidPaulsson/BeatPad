@@ -1,7 +1,7 @@
 #include "BeatPad.h"
 
 BeatPad::BeatPad (PluginProcessor& p, int padId)
-    : processorRef (p), padId (padId)
+    : processorRef (p), padId (padId), adsrComponent (p, padId)
 {
     setWantsKeyboardFocus (true);
 

@@ -7,7 +7,8 @@
     #include "ipps.h"
 #endif
 
-class PluginProcessor : public juce::AudioProcessor
+class PluginProcessor : public juce::AudioProcessor,
+                        public juce::ValueTree::Listener
 {
 public:
     PluginProcessor();
@@ -46,16 +47,31 @@ public:
 
     void addMidiMessage (const juce::MidiMessage& message);
 
-    juce::AudioBuffer<float>& getWaveFormForNote (int midiNote) { return *mSampleWaveforms[midiNote]; }
+    juce::AudioProcessorValueTreeState& getAPVST() { return mAPVTS; }
+
+    juce::AudioBuffer<float>* getWaveformForNote (int midiNote);
+    juce::AudioBuffer<float>* getCurrentWaveForm();
+    int getCurrentMidiNote();
+
+    void updateADSR (int padId);
+
+    std::atomic<int>& getSampleCount() { return mSampleCount; }
 
 private:
     juce::Synthesiser mSampler;
     juce::AudioFormatManager mFormatManager;
     juce::AudioFormatReader* mReader { nullptr };
+
+    juce::ADSR::Parameters adsrParameters;
+    juce::AudioProcessorValueTreeState mAPVTS;
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
+    void valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChang, const juce::Identifier& property) override;
+
     juce::AudioBuffer<float> waveForm;
 
-    juce::OwnedArray<juce::AudioBuffer<float>> mSampleWaveforms;
-
+    std::map<int, std::unique_ptr<juce::AudioBuffer<float>>> mSampleWaveforms;
+    std::atomic<int> currentMidiNote { -1 };
+    juce::AudioBuffer<float> currentWaveForm;
     const int numVoices { 8 };
 
     std::atomic<bool> mShouldUpdate { false };
@@ -66,3 +82,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
+;

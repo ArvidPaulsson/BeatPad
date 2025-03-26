@@ -8,11 +8,17 @@ BeatPadContainer::BeatPadContainer (PluginProcessor& p)
         // Weird, make safer by using a unique_ptr
         pads.add (new BeatPad (processorRef, i + 1));
         addAndMakeVisible (pads[i]);
-    }
+        }
 }
 
 BeatPadContainer::~BeatPadContainer()
 {
+    // clear the pads array
+    for (auto* pad : pads)
+    {
+        removeChildComponent (pad);
+    }
+    pads.clear();
 }
 
 void BeatPadContainer::paint (juce::Graphics& g)
@@ -22,9 +28,10 @@ void BeatPadContainer::paint (juce::Graphics& g)
 
 void BeatPadContainer::resized()
 {
-    auto area = getLocalBounds().reduced (10);
-    int buttonWidth = area.getWidth() / 3;
-    int buttonHeight = area.getHeight() / 3;
+    auto area = getLocalBounds();
+    auto beatPadArea = area.removeFromLeft (area.getWidth());
+    int buttonWidth = beatPadArea.getWidth() / 3;
+    int buttonHeight = beatPadArea.getHeight() / 3;
 
     // Arrange 9 pads in a 3x3 grid
     for (int row = 0; row < 3; ++row)
@@ -32,14 +39,19 @@ void BeatPadContainer::resized()
         for (int col = 0; col < 3; ++col)
         {
             int index = row * 3 + col;
-            int x = area.getX() + col * buttonWidth;
-            int y = area.getY() + row * buttonHeight;
+            int x = beatPadArea.getX() + col * buttonWidth;
+            int y = beatPadArea.getY() + row * buttonHeight;
 
             pads[index]->setBounds (x, y, buttonWidth - 2, buttonHeight - 2);
             // pads[index]->getTextButton().setBounds(x, y, buttonWidth - 2, buttonHeight - 2);
 
             // If using pads array instead
         }
+    }
+    // Assign rest of area to the adsr components
+    for (int i = 0; i < nbrOfPads; i++)
+    {
+        pads[i]->getADSRComponent().setBounds (area);
     }
 }
 
@@ -53,5 +65,8 @@ void BeatPadContainer::setPadColors (juce::Colour normal, juce::Colour triggered
 
 BeatPad* BeatPadContainer::getPad (int index)
 {
+    jassert (index >= 0 && index < pads.size());
+    if (index < 0 || index >= pads.size())
+        return nullptr;
     return pads[index];
 }

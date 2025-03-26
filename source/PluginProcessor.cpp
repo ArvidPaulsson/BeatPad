@@ -10,9 +10,11 @@ PluginProcessor::PluginProcessor()
     #endif
               .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-      )
+              ),
+      mAPVTS (*(this), nullptr, "PARAMETERS", createParameters())
 {
     mFormatManager.registerBasicFormats();
+    mAPVTS.state.addListener (this);
     for (int i = 0; i < numVoices; i++)
     {
         mSampler.addVoice (new juce::SamplerVoice());
@@ -149,6 +151,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (m.isNoteOn())
         {
             mIsNotePlayed = true;
+            int midiNote = m.getNoteNumber();
+            currentMidiNote.store (midiNote);
+            auto it = mSampleWaveforms.find (midiNote);
+            if (it != mSampleWaveforms.end())
+            {
+                currentWaveForm = *it->second;
+            }
             std::printf ("Note played: %d, with velocity %d\n", m.getNoteNumber(), m.getVelocity());
         }
         else if (m.isNoteOff())
@@ -177,16 +186,11 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
     juce::ignoreUnused (destData);
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
     juce::ignoreUnused (data, sizeInBytes);
 }
 
@@ -222,7 +226,6 @@ void PluginProcessor::loadFile (const juce::String& path, int midiNote)
         juce::SamplerSound* sound = dynamic_cast<juce::SamplerSound*> (mSampler.getSound (i).get());
         if (sound)
         {
-            // Remove any existing sound mapped to this MIDI note
             if (sound->appliesToNote (midiNote))
             {
                 mSampler.removeSound (i);
@@ -246,10 +249,11 @@ void PluginProcessor::loadFile (const juce::String& path, int midiNote)
     std::printf ("Mapped to MIDI Note: %d\n", midiNote);
 
     auto sampleLength = static_cast<int> (mReader->lengthInSamples);
-    auto* padWaveform = new juce::AudioBuffer<float>();
-    padWaveform->setSize (1, sampleLength);
-    mSampleWaveforms.add (padWaveform);
-    mReader->read (padWaveform, 0, sampleLength, 0, true, false);
+    auto padWaveform = std::make_unique<juce::AudioBuffer<float>> (1, sampleLength);
+
+    mReader->read (padWaveform.get(), 0, sampleLength, 0, true, false);
+
+    mSampleWaveforms[midiNote] = std::move (padWaveform);
 
     juce::BigInteger midiNoteRange;
     midiNoteRange.setRange (0, 128, false);
@@ -259,11 +263,10 @@ void PluginProcessor::loadFile (const juce::String& path, int midiNote)
         "Sample",
         *mReader,
         midiNoteRange,
-        midiNote, // Root note
-        0.0, // Attack time
-        0.1, // Release time
-        10.0 // Maximum sample length
-        ));
+        midiNote,
+        0.0,
+        0.1,
+        10.0));
 
     std::printf ("Sound added to sampler. Total sounds: %d\n", mSampler.getNumSounds());
 }
@@ -272,6 +275,74 @@ void PluginProcessor::addMidiMessage (const juce::MidiMessage& message)
 {
     std::printf ("Received MIDI message: %s\n", message.getDescription().toRawUTF8());
     midiMessageQueue.addEvent (message, 0);
+}
+
+juce::AudioBuffer<float>* PluginProcessor::getWaveformForNote (int midiNote)
+{
+    auto it = mSampleWaveforms.find (midiNote);
+    return (it != mSampleWaveforms.end()) ? it->second.get() : &waveForm;
+}
+
+juce::AudioBuffer<float>* PluginProcessor::getCurrentWaveForm()
+{
+    int note = currentMidiNote.load();
+    if (note == -1)
+    {
+        return nullptr;
+    }
+    auto it = mSampleWaveforms.find (note);
+    return (it != mSampleWaveforms.end()) ? it->second.get() : &waveForm;
+}
+
+int PluginProcessor::getCurrentMidiNote()
+{
+    return currentMidiNote.load();
+}
+
+void PluginProcessor::updateADSR (int padId)
+{
+    std::string padStr = std::to_string (padId);
+
+    adsrParameters.attack = mAPVTS.getRawParameterValue ("ATTACK_PAD_" + padStr)->load();
+    adsrParameters.decay = mAPVTS.getRawParameterValue ("DECAY_PAD_" + padStr)->load();
+    adsrParameters.sustain = mAPVTS.getRawParameterValue ("SUSTAIN_PAD_" + padStr)->load();
+    adsrParameters.release = mAPVTS.getRawParameterValue ("RELEASE_PAD_" + padStr)->load();
+
+    if (padId < mSampler.getNumSounds())
+    {
+        if (auto sound = dynamic_cast<juce::SamplerSound*> (mSampler.getSound (padId).get()))
+        {
+            sound->setEnvelopeParameters (adsrParameters);
+        }
+    }
+}
+
+juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameters()
+{
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    for (int i = 0; i < 9; i++)
+    {
+        auto padId = i + 1;
+        auto padIdStr = std::to_string (padId);
+        auto attackId = "ATTACK_PAD_" + padIdStr;
+        auto decayId = "DECAY_PAD_" + padIdStr;
+        auto sustainId = "SUSTAIN_PAD_" + padIdStr;
+        auto releaseId = "RELEASE_PAD_" + padIdStr;
+
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (attackId, attackId, 0.0f, 5.0f, 0.1f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (decayId, decayId, 0.0f, 5.0f, 0.1f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (sustainId, sustainId, 0.0f, 5.0f, 0.1f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (releaseId, releaseId, 0.0f, 5.0f, 0.1f));
+    }
+
+    return { params.begin(), params.end() };
+}
+
+void PluginProcessor::valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChanged, const juce::Identifier& property)
+{
+    // Use this method to listen for changes in the ValueTree
+    mShouldUpdate = true;
 }
 
 //==============================================================================

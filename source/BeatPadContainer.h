@@ -18,10 +18,11 @@ public:
     void setMidiNotes (const std::array<int, 9>& notes);
     void setPadColors (juce::Colour normal, juce::Colour triggered);
 
+    std::function<void (int)> onPadTriggered;
+
     BeatPad* getPad (int index);
 
 private:
-    // Initialize MIDI input
     int nbrOfPads { 9 };
 
     PluginProcessor& processorRef;
