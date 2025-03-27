@@ -20,6 +20,8 @@ public:
     void mouseDown (const juce::MouseEvent& event) override;
     void mouseUp (const juce::MouseEvent& event) override;
 
+    std::function<void (int)> onSelected;
+
     // Getters
     int getPadId() { return padId; }
     int getMidiNote() { return midiNote; }
@@ -27,22 +29,20 @@ public:
     bool getSampleLoaded() { return sampleLoaded; }
     bool getIsTriggered() { return isTriggered; }
     juce::String getBeatPadFileName() { return beatPadFileName; }
-    ADSRComponent& getADSRComponent() { return adsrComponent; }
 
 private:
     PluginProcessor& processorRef;
-    ADSRComponent adsrComponent;
 
     const std::map<int, int> padMidiNotes = {
-        { 1, 60 }, // C2
-        { 2, 61 }, // C#2
-        { 3, 62 }, // D2
-        { 4, 63 }, // D#2
-        { 5, 64 }, // E2
-        { 6, 65 }, // F2
-        { 7, 66 }, // F#2
-        { 8, 67 }, // G2
-        { 9, 68 } // G#2
+        { 1, 60 },
+        { 2, 61 },
+        { 3, 62 },
+        { 4, 63 },
+        { 5, 64 },
+        { 6, 65 },
+        { 7, 66 },
+        { 8, 67 },
+        { 9, 68 }
     };
 
     int padId { -1 };

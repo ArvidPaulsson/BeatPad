@@ -1,7 +1,7 @@
 #include "BeatPad.h"
 
 BeatPad::BeatPad (PluginProcessor& p, int padId)
-    : processorRef (p), padId (padId), adsrComponent (p, padId)
+    : processorRef (p), padId (padId)
 {
     setWantsKeyboardFocus (true);
 
@@ -58,6 +58,8 @@ void BeatPad::mouseUp (const juce::MouseEvent& event)
     {
         isTriggered = false;
         processorRef.addMidiMessage (juce::MidiMessage::noteOff (1, midiNote));
+        if (onSelected)
+            onSelected (padId);
     }
 }
 

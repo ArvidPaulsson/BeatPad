@@ -9,9 +9,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (waveThumbnail);
     addAndMakeVisible (beatPadContainer);
 
-    adsrComponent = std::make_unique<ADSRComponent> (p, -1);
-    addAndMakeVisible (adsrComponent.get());
-    adsrComponent->setVisible (false);
+    // Because the BeatPadContainer creates the pads, which in their turn create the ADSR components, we need to be able to access the adsr components and set their visibility when a pad is triggered
 
     setResizable (true, true);
     setResizeLimits (600, 400, 1918, 1050);
@@ -27,7 +25,6 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 }
 
@@ -38,22 +35,6 @@ void PluginEditor::resized()
     // Top half: Wave thumbnail
     auto topSection = area.removeFromTop (area.getHeight() * 0.5);
     waveThumbnail.setBounds (topSection);
-    auto beatPadSection = area.removeFromLeft (area.getWidth() * 0.5);
+    auto beatPadSection = area.removeFromLeft (area.getWidth());
     beatPadContainer.setBounds (beatPadSection);
-}
-
-void PluginEditor::updateADSRVisibility (int padId)
-{
-    activePadId = padId;
-
-    if (padId != -1)
-    {
-        adsrComponent->setVisible (true);
-        adsrComponent->setBounds (getLocalBounds());
-    }
-    else
-    {
-        adsrComponent->setVisible (false);
-    }
-    repaint();
 }

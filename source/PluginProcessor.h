@@ -62,7 +62,7 @@ private:
     juce::AudioFormatManager mFormatManager;
     juce::AudioFormatReader* mReader { nullptr };
 
-    juce::ADSR::Parameters adsrParameters;
+    std::map<int, juce::ADSR::Parameters> mADSRParams;
     juce::AudioProcessorValueTreeState mAPVTS;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
     void valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChang, const juce::Identifier& property) override;
@@ -71,6 +71,7 @@ private:
 
     std::map<int, std::unique_ptr<juce::AudioBuffer<float>>> mSampleWaveforms;
     std::atomic<int> currentMidiNote { -1 };
+    std::atomic<int> currentPadId { -1 };
     juce::AudioBuffer<float> currentWaveForm;
     const int numVoices { 8 };
 

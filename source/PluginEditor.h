@@ -18,8 +18,6 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    void updateADSRVisibility (int padId);
-
 private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
@@ -28,7 +26,6 @@ private:
     PluginProcessor& processorRef;
     BeatPadContainer beatPadContainer;
     WaveThumbnail waveThumbnail;
-    std::unique_ptr<ADSRComponent> adsrComponent;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

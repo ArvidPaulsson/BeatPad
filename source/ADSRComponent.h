@@ -17,6 +17,7 @@ public:
 private:
     PluginProcessor& processorRef;
     int padId { -1 };
+    juce::String adsrString;
 
     juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
     juce::Label attackLabel, decayLabel, sustainLabel, releaseLabel;

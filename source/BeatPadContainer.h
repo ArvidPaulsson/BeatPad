@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ADSRComponent.h"
 #include "BeatPad.h"
 #include "PluginProcessor.h"
 #include <juce_audio_devices/midi_io/juce_MidiDevices.h>
@@ -18,15 +19,19 @@ public:
     void setMidiNotes (const std::array<int, 9>& notes);
     void setPadColors (juce::Colour normal, juce::Colour triggered);
 
-    std::function<void (int)> onPadTriggered;
+    void updateADSRVisibility (int padId);
 
-    BeatPad* getPad (int index);
+    BeatPad getPad (int index);
+    ADSRComponent* getADSRComponent (int padId);
 
 private:
     int nbrOfPads { 9 };
+    int currentPadId { -1 };
 
     PluginProcessor& processorRef;
-    juce::OwnedArray<BeatPad> pads;
+    // juce::OwnedArray<BeatPad> pads;
+    std::vector<std::unique_ptr<BeatPad>> pads;
+    std::vector<std::unique_ptr<ADSRComponent>> adsrComponents;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BeatPadContainer)
 };

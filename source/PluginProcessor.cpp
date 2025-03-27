@@ -142,6 +142,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    if (mShouldUpdate)
+    {
+        for (int i = 0; i < 9; i++)
+        {
+            updateADSR (i);
+        }
+    }
+
     juce::MidiMessage m;
     juce::MidiBuffer::Iterator it { midiMessages };
     int sample;
@@ -302,6 +310,7 @@ int PluginProcessor::getCurrentMidiNote()
 void PluginProcessor::updateADSR (int padId)
 {
     std::string padStr = std::to_string (padId);
+    auto adsrParameters = mADSRParams[padId];
 
     adsrParameters.attack = mAPVTS.getRawParameterValue ("ATTACK_PAD_" + padStr)->load();
     adsrParameters.decay = mAPVTS.getRawParameterValue ("DECAY_PAD_" + padStr)->load();
@@ -341,10 +350,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 
 void PluginProcessor::valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChanged, const juce::Identifier& property)
 {
-    // Use this method to listen for changes in the ValueTree
     mShouldUpdate = true;
 }
-
 //==============================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

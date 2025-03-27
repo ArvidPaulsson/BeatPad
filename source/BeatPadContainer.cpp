@@ -6,19 +6,23 @@ BeatPadContainer::BeatPadContainer (PluginProcessor& p)
     for (int i = 0; i < nbrOfPads; i++)
     {
         // Weird, make safer by using a unique_ptr
-        pads.add (new BeatPad (processorRef, i + 1));
-        addAndMakeVisible (pads[i]);
-        }
+        // pads.add (new BeatPad (processorRef, i + 1));
+        auto pad = std::make_unique<BeatPad> (processorRef, i + 1);
+        auto adsrComponent = std::make_unique<ADSRComponent> (processorRef, i + 1);
+        addAndMakeVisible (pad.get());
+        addAndMakeVisible (adsrComponent.get());
+        adsrComponent.get()->setVisible (false);
+        adsrComponents.push_back (std::move (adsrComponent));
+        pad->onSelected = [this] (int padId) { updateADSRVisibility (padId); };
+        pads.push_back (std::move (pad));
+    }
 }
 
 BeatPadContainer::~BeatPadContainer()
 {
     // clear the pads array
-    for (auto* pad : pads)
-    {
-        removeChildComponent (pad);
-    }
     pads.clear();
+    adsrComponents.clear();
 }
 
 void BeatPadContainer::paint (juce::Graphics& g)
@@ -29,7 +33,7 @@ void BeatPadContainer::paint (juce::Graphics& g)
 void BeatPadContainer::resized()
 {
     auto area = getLocalBounds();
-    auto beatPadArea = area.removeFromLeft (area.getWidth());
+    auto beatPadArea = area.removeFromLeft (area.getWidth() * 0.5);
     int buttonWidth = beatPadArea.getWidth() / 3;
     int buttonHeight = beatPadArea.getHeight() / 3;
 
@@ -43,15 +47,16 @@ void BeatPadContainer::resized()
             int y = beatPadArea.getY() + row * buttonHeight;
 
             pads[index]->setBounds (x, y, buttonWidth - 2, buttonHeight - 2);
-            // pads[index]->getTextButton().setBounds(x, y, buttonWidth - 2, buttonHeight - 2);
-
-            // If using pads array instead
         }
     }
-    // Assign rest of area to the adsr components
-    for (int i = 0; i < nbrOfPads; i++)
+    if (currentPadId != -1)
     {
-        pads[i]->getADSRComponent().setBounds (area);
+        auto adsrComponent = getADSRComponent (currentPadId);
+        std::printf ("Current pad ID: %d\n", currentPadId);
+        if (adsrComponent)
+        {
+            adsrComponent->setBounds (area);
+        }
     }
 }
 
@@ -63,10 +68,32 @@ void BeatPadContainer::setPadColors (juce::Colour normal, juce::Colour triggered
 {
 }
 
-BeatPad* BeatPadContainer::getPad (int index)
+BeatPad BeatPadContainer::getPad (int index)
 {
-    jassert (index >= 0 && index < pads.size());
-    if (index < 0 || index >= pads.size())
-        return nullptr;
-    return pads[index];
+}
+
+ADSRComponent* BeatPadContainer::getADSRComponent (int index)
+{
+    if (index > 0 && index <= adsrComponents.size())
+    {
+        std::printf ("ADSR component found\n");
+        return adsrComponents[index - 1].get();
+    }
+    return nullptr;
+}
+
+void BeatPadContainer::updateADSRVisibility (int padId)
+{
+    std::printf ("Pad ID: %d\n", padId);
+    if (padId != -1)
+    {
+        auto adsrComponent = getADSRComponent (padId);
+        if (adsrComponent)
+        {
+            adsrComponent->setVisible (true);
+            currentPadId = padId;
+        }
+    }
+    // repaint();
+    resized();
 }
