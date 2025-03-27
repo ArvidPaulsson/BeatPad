@@ -11,10 +11,16 @@ PluginProcessor::PluginProcessor()
               .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
 #endif
               ),
-      mAPVTS (*(this), nullptr, "PARAMETERS", createParameters())
+      mAPVTS (*(this), nullptr, "PARAMETERS", createParameters()),
+      mParamUpdateFlags (numVoices)
 {
+    for (int i = 0; i < numVoices; i++)
+    {
+        mParamUpdateFlags[i].store (false);
+    }
+
+    registerParameters();
     mFormatManager.registerBasicFormats();
-    mAPVTS.state.addListener (this);
     for (int i = 0; i < numVoices; i++)
     {
         mSampler.addVoice (new juce::SamplerVoice());
@@ -141,14 +147,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-
-    if (mShouldUpdate)
-    {
-        for (int i = 0; i < 9; i++)
-        {
-            updateADSR (i);
-        }
-    }
 
     juce::MidiMessage m;
     juce::MidiBuffer::Iterator it { midiMessages };
@@ -307,6 +305,24 @@ int PluginProcessor::getCurrentMidiNote()
     return currentMidiNote.load();
 }
 
+void PluginProcessor::registerParameters()
+{
+    for (int i = 0; i < 9; i++)
+    {
+        auto padId = i + 1;
+        auto padIdStr = std::to_string (padId);
+        auto attackId = "ATTACK_PAD_" + padIdStr;
+        auto decayId = "DECAY_PAD_" + padIdStr;
+        auto sustainId = "SUSTAIN_PAD_" + padIdStr;
+        auto releaseId = "RELEASE_PAD_" + padIdStr;
+
+        mAPVTS.addParameterListener (attackId, this);
+        mAPVTS.addParameterListener (decayId, this);
+        mAPVTS.addParameterListener (sustainId, this);
+        mAPVTS.addParameterListener (releaseId, this);
+    }
+}
+
 void PluginProcessor::updateADSR (int padId)
 {
     std::string padStr = std::to_string (padId);
@@ -348,10 +364,39 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     return { params.begin(), params.end() };
 }
 
-void PluginProcessor::valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChanged, const juce::Identifier& property)
+void PluginProcessor::parameterChanged (const juce::String& parameterID, float newValue)
 {
-    mShouldUpdate = true;
+    std::string idStr = parameterID.toStdString();
+    size_t lastUnderscore = idStr.find_last_of ('_');
+
+    if (lastUnderscore != std::string::npos && lastUnderscore > 0)
+    {
+        // Check if it's one of the ADSR parameters we care about
+        if (idStr.find ("ATTACK_PAD_") == 0 || idStr.find ("DECAY_PAD_") == 0 || idStr.find ("SUSTAIN_PAD_") == 0 || idStr.find ("RELEASE_PAD_") == 0)
+        {
+            std::string padNumStr = idStr.substr (lastUnderscore + 1);
+            try
+            {
+                int padId = std::stoi (padNumStr);
+                if (padId >= 1 && padId <= numVoices)
+                {
+                    // Just set the flag to true for this pad
+                    mParamUpdateFlags[padId - 1].store (true, std::memory_order_relaxed);
+                    // printf("Flagging Pad %d for ADSR update.\n", padId);
+                }
+            } catch (const std::exception& e)
+            { // Catch base exception
+                // std::cerr << "Error parsing pad ID from parameter: " << parameterID.toStdString() << ": " << e.what() << std::endl;
+            }
+        }
+    }
 }
+
+void PluginProcessor::updateADSRForPadOnAudioThread (int padId)
+{
+    juce::ignoreUnused (padId);
+}
+
 //==============================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

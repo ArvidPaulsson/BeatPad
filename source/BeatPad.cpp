@@ -49,6 +49,8 @@ void BeatPad::mouseDown (const juce::MouseEvent& event)
     {
         isTriggered = true;
         processorRef.addMidiMessage (juce::MidiMessage::noteOn (1, midiNote, 1.0f));
+        if (onSelected)
+            onSelected (padId);
     }
 }
 
@@ -58,9 +60,7 @@ void BeatPad::mouseUp (const juce::MouseEvent& event)
     {
         isTriggered = false;
         processorRef.addMidiMessage (juce::MidiMessage::noteOff (1, midiNote));
-        if (onSelected)
-            onSelected (padId);
-    }
+        }
 }
 
 bool BeatPad::isInterestedInFileDrag (const juce::StringArray& files)

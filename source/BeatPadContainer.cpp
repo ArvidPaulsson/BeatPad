@@ -85,15 +85,24 @@ ADSRComponent* BeatPadContainer::getADSRComponent (int index)
 void BeatPadContainer::updateADSRVisibility (int padId)
 {
     std::printf ("Pad ID: %d\n", padId);
-    if (padId != -1)
+
+    // Hide previously visible ADSR component if it exists
+    if (currentPadId != -1)
     {
-        auto adsrComponent = getADSRComponent (padId);
-        if (adsrComponent)
+        auto previousAdsrComponent = getADSRComponent (currentPadId);
+        if (previousAdsrComponent)
         {
-            adsrComponent->setVisible (true);
-            currentPadId = padId;
+            previousAdsrComponent->setVisible (false);
         }
     }
-    // repaint();
+
+    // Show the new ADSR component
+    auto newAdsrComponent = getADSRComponent (padId);
+    if (newAdsrComponent)
+    {
+        newAdsrComponent->setVisible (true);
+        currentPadId = padId;
+    }
+
     resized();
 }

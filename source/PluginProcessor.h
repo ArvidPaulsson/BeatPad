@@ -8,7 +8,7 @@
 #endif
 
 class PluginProcessor : public juce::AudioProcessor,
-                        public juce::ValueTree::Listener
+                        public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     PluginProcessor();
@@ -65,7 +65,8 @@ private:
     std::map<int, juce::ADSR::Parameters> mADSRParams;
     juce::AudioProcessorValueTreeState mAPVTS;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
-    void valueTreePropertyChanged (juce::ValueTree& treeWhosPropertyHasChang, const juce::Identifier& property) override;
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void registerParameters();
 
     juce::AudioBuffer<float> waveForm;
 
@@ -73,11 +74,14 @@ private:
     std::atomic<int> currentMidiNote { -1 };
     std::atomic<int> currentPadId { -1 };
     juce::AudioBuffer<float> currentWaveForm;
-    const int numVoices { 8 };
+    const int numVoices { 9 };
 
     std::atomic<bool> mShouldUpdate { false };
     std::atomic<bool> mIsNotePlayed { false };
     std::atomic<int> mSampleCount { 0 };
+
+    std::vector<std::atomic<bool>> mParamUpdateFlags;
+    void updateADSRForPadOnAudioThread (int padId);
 
     juce::MidiBuffer midiMessageQueue;
 
