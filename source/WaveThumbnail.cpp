@@ -56,7 +56,7 @@ void WaveThumbnail::drawThumbnail (juce::Graphics& g, juce::AudioBuffer<float>& 
         auto textBounds = getLocalBounds().reduced (10, 10);
         // g.drawFittedText (mFileName, textBounds, juce::Justification::topRight, 1);
 
-        auto playHeadPosition = juce::jmap<int> (processorRef.getSampleCount(), 0, processorRef.getCurrentWaveForm()->getNumSamples(), 0, getWidth());
+        auto playHeadPosition = juce::jmap<int> (processorRef.getSampleCount().load(), 0, processorRef.getCurrentWaveForm()->getNumSamples(), 0, getWidth());
 
         g.setColour (juce::Colours::white);
         g.drawLine (playHeadPosition, 0, playHeadPosition, getHeight(), 2.0f);

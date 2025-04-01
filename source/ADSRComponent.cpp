@@ -59,21 +59,59 @@ ADSRComponent::~ADSRComponent()
 
 void ADSRComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colours::black);
+    auto backgroundColour = getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId);
+    auto bounds = getLocalBounds().toFloat();
+    float cornerSize = 6.0f; // Adjust corner rounding
+
+    // Draw a slightly darker, rounded background
+    g.setColour (backgroundColour.darker (0.4f));
+    g.fillRoundedRectangle (bounds, cornerSize);
+
+    // Draw a subtle outline (optional)
+    g.setColour (backgroundColour.brighter (0.2f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), cornerSize, 1.0f);
 }
 
 void ADSRComponent::resized()
 {
-    const auto componentWidth = getWidth();
-    const auto componentHeight = getHeight();
-    const auto dialWidth = componentWidth * 0.1f;
-    const auto dialHeight = componentHeight * 0.75f;
-    const auto totalWidth = dialWidth * 4;
-    const auto startX = (componentWidth - totalWidth) / 2.0f;
-    const auto startY = (componentHeight - dialHeight) / 2.0f;
+    const int kMargin = 10; // Margin around the edges
+    const int kSliderSpacing = 8; // Space between sliders horizontally
+    const int kNumSliders = 4;
+    // Increase this value to push labels further down by making sliders shorter
+    const int kSpaceBelowSliders = 25; // << ADJUST THIS VALUE (pixels)
 
-    attackSlider.setBounds (startX, startY, dialWidth, dialHeight);
-    decaySlider.setBounds (startX + dialWidth, startY, dialWidth, dialHeight);
-    sustainSlider.setBounds (startX + (dialWidth * 2), startY, dialWidth, dialHeight);
-    releaseSlider.setBounds (startX + (dialWidth * 3), startY, dialWidth, dialHeight);
+    auto bounds = getLocalBounds(); // Get total area
+
+    // Reduce bounds by margin (on all sides)
+    bounds.reduce (kMargin, kMargin);
+
+    // Calculate available width for sliders (total width - spacing between them)
+    int totalSpacing = kSliderSpacing * (kNumSliders - 1);
+    int availableWidth = bounds.getWidth() - totalSpacing;
+    int sliderWidth = availableWidth / kNumSliders;
+
+    // Calculate slider height, ensuring space is left below them
+    int sliderHeight = bounds.getHeight() - kSpaceBelowSliders;
+    // Ensure height is not negative if component is too small
+    sliderHeight = juce::jmax (10, sliderHeight); // Minimum height of 10 pixels
+
+    // Calculate starting Y position for sliders (at the top of the reduced bounds)
+    int sliderY = bounds.getY();
+
+    // Calculate starting X position for the first slider
+    int currentX = bounds.getX();
+
+    // Set bounds for each slider
+    // Using sliderWidth for both width and height to aim for square-ish dials
+    int dialSize = juce::jmin (sliderWidth, sliderHeight);
+    // Recenter vertically if making them square
+    sliderY += (sliderHeight - dialSize) / 2;
+
+    attackSlider.setBounds (currentX, sliderY, dialSize, dialSize);
+    currentX += sliderWidth + kSliderSpacing; // Still advance by original width slot + spacing
+    decaySlider.setBounds (currentX, sliderY, dialSize, dialSize);
+    currentX += sliderWidth + kSliderSpacing;
+    sustainSlider.setBounds (currentX, sliderY, dialSize, dialSize);
+    currentX += sliderWidth + kSliderSpacing;
+    releaseSlider.setBounds (currentX, sliderY, dialSize, dialSize);
 }

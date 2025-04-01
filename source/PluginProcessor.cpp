@@ -133,7 +133,7 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 #endif
 }
 
-void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+/* void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::MidiBuffer& midiMessages)
 {
     // juce::ignoreUnused (midiMessages);
@@ -176,6 +176,150 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     mSampleCount = mIsNotePlayed ? mSampleCount += buffer.getNumSamples() : 0;
 
     mSampler.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
+} */
+
+void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+    juce::MidiBuffer& midiMessages)
+{
+    juce::ScopedNoDenormals noDenormals;
+    auto totalNumInputChannels = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+    const int numSamplesInBlock = buffer.getNumSamples(); // Store for frequent use
+
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear (i, 0, numSamplesInBlock);
+
+    // --- Apply Parameter Updates ---
+    for (int padIdx = 0; padIdx < numVoices; ++padIdx)
+    {
+        if (mParamUpdateFlags[padIdx].exchange (false, std::memory_order_relaxed))
+        {
+            updateADSRForPadOnAudioThread (padIdx + 1);
+        }
+    }
+    // -----------------------------
+
+    midiMessages.addEvents (midiMessageQueue, 0, numSamplesInBlock, 0);
+    midiMessageQueue.clear();
+
+    // --- Update mCurrentMidiNoteForDisplay based on LAST Note On in block ---
+    int lastNoteOnThisBlock = -1;
+    for (const auto metadata : midiMessages)
+    {
+        if (metadata.getMessage().isNoteOn())
+        {
+            lastNoteOnThisBlock = metadata.getMessage().getNoteNumber();
+        }
+    }
+    if (lastNoteOnThisBlock != -1)
+    {
+        mCurrentMidiNoteForDisplay.store (lastNoteOnThisBlock, std::memory_order_relaxed);
+    }
+    // -----------------------------------------------------------------------
+
+    // --- Update Sample Count for Playhead ---
+    int displayNote = mCurrentMidiNoteForDisplay.load (std::memory_order_relaxed);
+
+    if (displayNote != mCurrentPlayingNoteForSampleCount)
+    {
+        mSampleCount.store (0, std::memory_order_relaxed); // Reset counter for the new note
+        mCurrentPlayingNoteForSampleCount = displayNote; // Track the new note
+    }
+
+    if (mCurrentPlayingNoteForSampleCount != -1)
+    {
+        bool isTrackedNotePlaying = false;
+        for (int i = 0; i < mSampler.getNumVoices(); ++i)
+        {
+            if (auto* voice = dynamic_cast<juce::SamplerVoice*> (mSampler.getVoice (i)))
+            {
+                // Check if the voice is playing the note we care about
+                if (voice->isKeyDown() && voice->getCurrentlyPlayingNote() == mCurrentPlayingNoteForSampleCount)
+                {
+                    isTrackedNotePlaying = true;
+                    break;
+                }
+            }
+        }
+
+        if (isTrackedNotePlaying)
+        {
+            // --- Get the waveform for the tracked note ---
+            juce::AudioBuffer<float>* waveform = getWaveformForNote (mCurrentPlayingNoteForSampleCount);
+
+            if (waveform != nullptr && waveform->getNumSamples() > 0)
+            {
+                int numSamplesInWaveform = waveform->getNumSamples();
+                int currentCount = mSampleCount.load (std::memory_order_relaxed);
+
+                // --- **FIX**: Only increment if current count is less than total samples ---
+                if (currentCount < numSamplesInWaveform)
+                {
+                    int nextSampleCount = currentCount + numSamplesInBlock;
+
+                    // Cap the count at the waveform length
+                    if (nextSampleCount >= numSamplesInWaveform)
+                    {
+                        mSampleCount.store (numSamplesInWaveform, std::memory_order_relaxed);
+                    }
+                    else
+                    {
+                        mSampleCount.store (nextSampleCount, std::memory_order_relaxed);
+                    }
+                }
+                // --- End Fix ---
+                // If currentCount is already >= numSamplesInWaveform, do nothing.
+            }
+            else
+            {
+                // Waveform doesn't exist for the tracked note, reset count (safety)
+                if (mSampleCount.load() != 0)
+                    mSampleCount.store (0, std::memory_order_relaxed);
+            }
+        }
+        else // The tracked note is no longer "KeyDown" according to the sampler voice
+        {
+            // Reset the count and stop tracking this note for the counter
+            if (mSampleCount.load() != 0)
+                mSampleCount.store (0, std::memory_order_relaxed);
+            mCurrentPlayingNoteForSampleCount = -1;
+        }
+    }
+    else // Not tracking any note (-1)
+    {
+        if (mSampleCount.load() != 0)
+            mSampleCount.store (0, std::memory_order_relaxed);
+    }
+    // --- End Sample Count Update ---
+
+    // --- Render Audio ---
+    mSampler.renderNextBlock (buffer, midiMessages, 0, numSamplesInBlock);
+    // --------------------
+
+    // --- Optional: Reset display note if no voices are playing at all ---
+    bool anyVoicePlaying = false;
+    for (int i = 0; i < mSampler.getNumVoices(); ++i)
+    {
+        if (auto* voice = dynamic_cast<juce::SamplerVoice*> (mSampler.getVoice (i)))
+        {
+            if (voice->isVoiceActive() && voice->isKeyDown())
+            { // isPlaying includes release phase
+                anyVoicePlaying = true;
+                break;
+            }
+        }
+    }
+    if (!anyVoicePlaying && mCurrentMidiNoteForDisplay.load() != -1)
+    {
+        // mCurrentMidiNoteForDisplay.store (-1, std::memory_order_relaxed);
+        // Ensure count is also reset if missed above
+        if (mCurrentPlayingNoteForSampleCount != -1 || mSampleCount.load() != 0)
+        {
+            mSampleCount.store (0);
+            mCurrentPlayingNoteForSampleCount = -1;
+        }
+    }
+    // --------------------------------------------------------------------
 }
 
 //==============================================================================
@@ -192,12 +336,37 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    juce::ignoreUnused (destData);
+    // auto state = mAPVTS.copyState();
+    // std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    // copyXmlToBinary (*xml, destData);
+    // printf ("State information saved.\n");
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    juce::ignoreUnused (data, sizeInBytes);
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+    if (xmlState != nullptr)
+    {
+        if (xmlState->hasTagName (mAPVTS.state.getType()))
+        {
+            mAPVTS.replaceState (juce::ValueTree::fromXml (*xmlState));
+            printf ("State information loaded.\n");
+
+            for (int padIdx = 0; padIdx < numVoices; ++padIdx)
+            {
+                mParamUpdateFlags[padIdx].store (true, std::memory_order_relaxed);
+            }
+            printf ("Flagged all pads for ADSR update after loading state.\n");
+        }
+        else
+        {
+            printf ("Error loading state: XML tag name mismatch.\n");
+        }
+    }
+    else
+    {
+        printf ("Error loading state: Could not parse XML from binary data.\n");
+    }
 }
 
 void PluginProcessor::loadFile (const juce::String& path)
@@ -291,7 +460,7 @@ juce::AudioBuffer<float>* PluginProcessor::getWaveformForNote (int midiNote)
 
 juce::AudioBuffer<float>* PluginProcessor::getCurrentWaveForm()
 {
-    int note = currentMidiNote.load();
+    int note = mCurrentMidiNoteForDisplay.load();
     if (note == -1)
     {
         return nullptr;
@@ -302,7 +471,8 @@ juce::AudioBuffer<float>* PluginProcessor::getCurrentWaveForm()
 
 int PluginProcessor::getCurrentMidiNote()
 {
-    return currentMidiNote.load();
+    // return currentMidiNote.load()
+    return mCurrentMidiNoteForDisplay.load();
 }
 
 void PluginProcessor::registerParameters()
@@ -346,6 +516,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
+    juce::NormalisableRange<float> attackRange (0.0f, 5.0f, 0.001f, 0.3f);
+    juce::NormalisableRange<float> decayRange (0.0f, 5.0f, 0.001f, 0.3f);
+    juce::NormalisableRange<float> sustainRange (0.0f, 1.0f, 0.001f);
+    juce::NormalisableRange<float> releaseRange (0.002f, 5.0f, 0.001f, 0.3f);
+
     for (int i = 0; i < 9; i++)
     {
         auto padId = i + 1;
@@ -355,10 +530,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         auto sustainId = "SUSTAIN_PAD_" + padIdStr;
         auto releaseId = "RELEASE_PAD_" + padIdStr;
 
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (attackId, attackId, 0.0f, 5.0f, 0.1f));
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (decayId, decayId, 0.0f, 5.0f, 0.1f));
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (sustainId, sustainId, 0.0f, 5.0f, 0.1f));
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (releaseId, releaseId, 0.0f, 5.0f, 0.1f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (attackId, attackId, attackRange, 0.01f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (decayId, decayId, decayRange, 0.1f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (sustainId, sustainId, sustainRange, 1.0f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (releaseId, releaseId, releaseRange, 0.3f));
     }
 
     return { params.begin(), params.end() };
@@ -371,7 +546,6 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
 
     if (lastUnderscore != std::string::npos && lastUnderscore > 0)
     {
-        // Check if it's one of the ADSR parameters we care about
         if (idStr.find ("ATTACK_PAD_") == 0 || idStr.find ("DECAY_PAD_") == 0 || idStr.find ("SUSTAIN_PAD_") == 0 || idStr.find ("RELEASE_PAD_") == 0)
         {
             std::string padNumStr = idStr.substr (lastUnderscore + 1);
@@ -380,9 +554,7 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
                 int padId = std::stoi (padNumStr);
                 if (padId >= 1 && padId <= numVoices)
                 {
-                    // Just set the flag to true for this pad
                     mParamUpdateFlags[padId - 1].store (true, std::memory_order_relaxed);
-                    // printf("Flagging Pad %d for ADSR update.\n", padId);
                 }
             } catch (const std::exception& e)
             { // Catch base exception
@@ -394,7 +566,39 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
 
 void PluginProcessor::updateADSRForPadOnAudioThread (int padId)
 {
-    juce::ignoreUnused (padId);
+    int midiNote = 60 + padId - 1;
+
+    juce::SamplerSound* soundToUpdate = nullptr;
+    for (int i = 0; i < mSampler.getNumSounds(); ++i)
+    {
+        if (auto* sound = dynamic_cast<juce::SamplerSound*> (mSampler.getSound (i).get()))
+        {
+            if (sound->appliesToNote (midiNote))
+            {
+                soundToUpdate = sound;
+                break; // Found the sound
+            }
+        }
+    }
+
+    if (soundToUpdate)
+    {
+        // 3. Read CURRENT ADSR values from APVTS (thread-safe read)
+        std::string padStr = std::to_string (padId);
+        juce::ADSR::Parameters newParams;
+
+        // Use fallback defaults if parameter somehow doesn't exist
+        newParams.attack = mAPVTS.getRawParameterValue ("ATTACK_PAD_" + padStr) ? mAPVTS.getRawParameterValue ("ATTACK_PAD_" + padStr)->load() : 0.01f;
+        newParams.decay = mAPVTS.getRawParameterValue ("DECAY_PAD_" + padStr) ? mAPVTS.getRawParameterValue ("DECAY_PAD_" + padStr)->load() : 0.1f;
+        newParams.sustain = mAPVTS.getRawParameterValue ("SUSTAIN_PAD_" + padStr) ? mAPVTS.getRawParameterValue ("SUSTAIN_PAD_" + padStr)->load() : 1.0f;
+        newParams.release = mAPVTS.getRawParameterValue ("RELEASE_PAD_" + padStr) ? mAPVTS.getRawParameterValue ("RELEASE_PAD_" + padStr)->load() : 0.3f;
+
+        soundToUpdate->setEnvelopeParameters (newParams);
+    }
+    else
+    {
+        printf ("AudioThread: Warning - No SamplerSound found for Pad %d (MIDI %d) to update ADSR.\n", padId, midiNote);
+    }
 }
 
 //==============================================================================

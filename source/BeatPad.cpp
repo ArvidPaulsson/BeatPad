@@ -31,7 +31,7 @@ void BeatPad::paint (juce::Graphics& g)
     g.setFillType (gradient);
     g.fillRect (getLocalBounds());
 
-    int padding = 4;
+    int padding = 2;
     juce::Rectangle<int> innerRect = getLocalBounds().reduced (padding);
 
     g.setColour (outlineColor);
@@ -52,6 +52,7 @@ void BeatPad::mouseDown (const juce::MouseEvent& event)
         if (onSelected)
             onSelected (padId);
     }
+    repaint();
 }
 
 void BeatPad::mouseUp (const juce::MouseEvent& event)
@@ -60,7 +61,8 @@ void BeatPad::mouseUp (const juce::MouseEvent& event)
     {
         isTriggered = false;
         processorRef.addMidiMessage (juce::MidiMessage::noteOff (1, midiNote));
-        }
+    }
+    repaint();
 }
 
 bool BeatPad::isInterestedInFileDrag (const juce::StringArray& files)

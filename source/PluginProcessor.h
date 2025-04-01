@@ -79,6 +79,8 @@ private:
     std::atomic<bool> mShouldUpdate { false };
     std::atomic<bool> mIsNotePlayed { false };
     std::atomic<int> mSampleCount { 0 };
+    std::atomic<int> mCurrentMidiNoteForDisplay { -1 };
+    int mCurrentPlayingNoteForSampleCount { -1 };
 
     std::vector<std::atomic<bool>> mParamUpdateFlags;
     void updateADSRForPadOnAudioThread (int padId);
