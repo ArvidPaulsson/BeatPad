@@ -5,8 +5,6 @@ BeatPadContainer::BeatPadContainer (PluginProcessor& p)
 {
     for (int i = 0; i < nbrOfPads; i++)
     {
-        // Weird, make safer by using a unique_ptr
-        // pads.add (new BeatPad (processorRef, i + 1));
         auto pad = std::make_unique<BeatPad> (processorRef, i + 1);
         auto adsrComponent = std::make_unique<ADSRComponent> (processorRef, i + 1);
         addAndMakeVisible (pad.get());
@@ -20,7 +18,6 @@ BeatPadContainer::BeatPadContainer (PluginProcessor& p)
 
 BeatPadContainer::~BeatPadContainer()
 {
-    // clear the pads array
     pads.clear();
     adsrComponents.clear();
 }
@@ -84,10 +81,8 @@ ADSRComponent* BeatPadContainer::getADSRComponent (int index)
 
 void BeatPadContainer::updateADSRVisibility (int padId)
 {
-    std::printf ("Pad ID: %d\n", padId);
-
     // Hide previously visible ADSR component if it exists
-    if (currentPadId != -1)
+    if (currentPadId != -1 && currentPadId != padId)
     {
         auto previousAdsrComponent = getADSRComponent (currentPadId);
         if (previousAdsrComponent)
@@ -96,13 +91,30 @@ void BeatPadContainer::updateADSRVisibility (int padId)
         }
     }
 
-    // Show the new ADSR component
     auto newAdsrComponent = getADSRComponent (padId);
     if (newAdsrComponent)
     {
         newAdsrComponent->setVisible (true);
         currentPadId = padId;
-    }
+        for (int i = 0; i < pads.size(); ++i)
+        {
+            if (pads[i] != nullptr)
+            {
+                pads[i]->setHighlight ((i + 1) == padId);
+            }
+        }
+        // -----------------------------
 
-    resized();
+        resized();
+        repaint();
+    }
+    else
+    {
+        currentPadId = -1;
+        for (int i = 0; i < pads.size(); ++i)
+        {
+            if (pads[i] != nullptr)
+                pads[i]->setHighlight (false);
+        }
+    }
 }

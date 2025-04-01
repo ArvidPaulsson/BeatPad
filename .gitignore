@@ -15,6 +15,7 @@ Builds/*
 !Builds/.gitkeep
 build
 build/*
+.cache
 
 # Sound files
 *.wav

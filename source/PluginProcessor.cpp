@@ -133,63 +133,17 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 #endif
 }
 
-/* void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-    juce::MidiBuffer& midiMessages)
-{
-    // juce::ignoreUnused (midiMessages);
-
-    midiMessages.addEvents (midiMessageQueue, 0, buffer.getNumSamples(), 0);
-    midiMessageQueue.clear();
-
-    juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
-
-    juce::MidiMessage m;
-    juce::MidiBuffer::Iterator it { midiMessages };
-    int sample;
-
-    while (it.getNextEvent (m, sample))
-    {
-        if (m.isNoteOn())
-        {
-            mIsNotePlayed = true;
-            int midiNote = m.getNoteNumber();
-            currentMidiNote.store (midiNote);
-            auto it = mSampleWaveforms.find (midiNote);
-            if (it != mSampleWaveforms.end())
-            {
-                currentWaveForm = *it->second;
-            }
-            std::printf ("Note played: %d, with velocity %d\n", m.getNoteNumber(), m.getVelocity());
-        }
-        else if (m.isNoteOff())
-        {
-            mIsNotePlayed = false;
-            std::printf ("Note off: %d\n", m.getNoteNumber());
-        }
-    }
-
-    mSampleCount = mIsNotePlayed ? mSampleCount += buffer.getNumSamples() : 0;
-
-    mSampler.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
-} */
-
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
-    const int numSamplesInBlock = buffer.getNumSamples(); // Store for frequent use
+    const int numSamplesInBlock = buffer.getNumSamples();
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, numSamplesInBlock);
 
-    // --- Apply Parameter Updates ---
     for (int padIdx = 0; padIdx < numVoices; ++padIdx)
     {
         if (mParamUpdateFlags[padIdx].exchange (false, std::memory_order_relaxed))
@@ -197,12 +151,59 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             updateADSRForPadOnAudioThread (padIdx + 1);
         }
     }
-    // -----------------------------
 
     midiMessages.addEvents (midiMessageQueue, 0, numSamplesInBlock, 0);
     midiMessageQueue.clear();
 
-    // --- Update mCurrentMidiNoteForDisplay based on LAST Note On in block ---
+    juce::MidiBuffer filteredMidiMessages;
+    bool anySoloActive = isAnyPadSoloed();
+
+    for (const auto metadata : midiMessages)
+    {
+        auto message = metadata.getMessage();
+        int samplePosition = metadata.samplePosition;
+
+        if (message.isNoteOn())
+        {
+            int noteNumber = message.getNoteNumber();
+            int padId = -1;
+            if (noteNumber >= 60 && noteNumber < (60 + numVoices))
+            {
+                padId = noteNumber - 60 + 1;
+            }
+
+            bool allowNote = false;
+            if (padId != -1)
+            {
+                bool muted = isPadMuted (padId);
+                bool soloed = isPadSoloed (padId);
+
+                if (!muted)
+                {
+                    if (anySoloActive)
+                    {
+                        if (soloed)
+                        {
+                            allowNote = true;
+                        }
+                    }
+                    else
+                    {
+                        allowNote = true;
+                    }
+                }
+            }
+            if (allowNote)
+            {
+                filteredMidiMessages.addEvent (message, samplePosition);
+            }
+        }
+        else
+        {
+            filteredMidiMessages.addEvent (message, samplePosition);
+        }
+    }
+
     int lastNoteOnThisBlock = -1;
     for (const auto metadata : midiMessages)
     {
@@ -215,15 +216,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         mCurrentMidiNoteForDisplay.store (lastNoteOnThisBlock, std::memory_order_relaxed);
     }
-    // -----------------------------------------------------------------------
 
-    // --- Update Sample Count for Playhead ---
     int displayNote = mCurrentMidiNoteForDisplay.load (std::memory_order_relaxed);
-
     if (displayNote != mCurrentPlayingNoteForSampleCount)
     {
-        mSampleCount.store (0, std::memory_order_relaxed); // Reset counter for the new note
-        mCurrentPlayingNoteForSampleCount = displayNote; // Track the new note
+        mSampleCount.store (0, std::memory_order_relaxed);
+        mCurrentPlayingNoteForSampleCount = displayNote;
     }
 
     if (mCurrentPlayingNoteForSampleCount != -1)
@@ -233,7 +231,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             if (auto* voice = dynamic_cast<juce::SamplerVoice*> (mSampler.getVoice (i)))
             {
-                // Check if the voice is playing the note we care about
                 if (voice->isKeyDown() && voice->getCurrentlyPlayingNote() == mCurrentPlayingNoteForSampleCount)
                 {
                     isTrackedNotePlaying = true;
@@ -244,66 +241,45 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         if (isTrackedNotePlaying)
         {
-            // --- Get the waveform for the tracked note ---
             juce::AudioBuffer<float>* waveform = getWaveformForNote (mCurrentPlayingNoteForSampleCount);
-
             if (waveform != nullptr && waveform->getNumSamples() > 0)
             {
                 int numSamplesInWaveform = waveform->getNumSamples();
                 int currentCount = mSampleCount.load (std::memory_order_relaxed);
-
-                // --- **FIX**: Only increment if current count is less than total samples ---
                 if (currentCount < numSamplesInWaveform)
                 {
                     int nextSampleCount = currentCount + numSamplesInBlock;
-
-                    // Cap the count at the waveform length
-                    if (nextSampleCount >= numSamplesInWaveform)
-                    {
-                        mSampleCount.store (numSamplesInWaveform, std::memory_order_relaxed);
-                    }
-                    else
-                    {
-                        mSampleCount.store (nextSampleCount, std::memory_order_relaxed);
-                    }
+                    mSampleCount.store (juce::jmin (nextSampleCount, numSamplesInWaveform), std::memory_order_relaxed);
                 }
-                // --- End Fix ---
-                // If currentCount is already >= numSamplesInWaveform, do nothing.
             }
             else
             {
-                // Waveform doesn't exist for the tracked note, reset count (safety)
                 if (mSampleCount.load() != 0)
-                    mSampleCount.store (0, std::memory_order_relaxed);
+                    mSampleCount.store (0);
             }
         }
-        else // The tracked note is no longer "KeyDown" according to the sampler voice
+        else
         {
-            // Reset the count and stop tracking this note for the counter
             if (mSampleCount.load() != 0)
-                mSampleCount.store (0, std::memory_order_relaxed);
+                mSampleCount.store (0);
             mCurrentPlayingNoteForSampleCount = -1;
         }
     }
-    else // Not tracking any note (-1)
+    else
     {
         if (mSampleCount.load() != 0)
-            mSampleCount.store (0, std::memory_order_relaxed);
+            mSampleCount.store (0);
     }
-    // --- End Sample Count Update ---
 
-    // --- Render Audio ---
-    mSampler.renderNextBlock (buffer, midiMessages, 0, numSamplesInBlock);
-    // --------------------
+    mSampler.renderNextBlock (buffer, filteredMidiMessages, 0, numSamplesInBlock);
 
-    // --- Optional: Reset display note if no voices are playing at all ---
     bool anyVoicePlaying = false;
     for (int i = 0; i < mSampler.getNumVoices(); ++i)
     {
         if (auto* voice = dynamic_cast<juce::SamplerVoice*> (mSampler.getVoice (i)))
         {
-            if (voice->isVoiceActive() && voice->isKeyDown())
-            { // isPlaying includes release phase
+            if (voice->isVoiceActive())
+            {
                 anyVoicePlaying = true;
                 break;
             }
@@ -311,15 +287,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
     if (!anyVoicePlaying && mCurrentMidiNoteForDisplay.load() != -1)
     {
-        // mCurrentMidiNoteForDisplay.store (-1, std::memory_order_relaxed);
-        // Ensure count is also reset if missed above
+        // Only reset display if nothing is making sound
+        // mCurrentMidiNoteForDisplay.store (lastNoteOnThisBlock, std::memory_order_relaxed);
+
         if (mCurrentPlayingNoteForSampleCount != -1 || mSampleCount.load() != 0)
         {
             mSampleCount.store (0);
             mCurrentPlayingNoteForSampleCount = -1;
         }
     }
-    // --------------------------------------------------------------------
 }
 
 //==============================================================================
@@ -340,6 +316,8 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     // std::unique_ptr<juce::XmlElement> xml (state.createXml());
     // copyXmlToBinary (*xml, destData);
     // printf ("State information saved.\n");
+    juce::ignoreUnused (destData);
+    // Not currently working, as previously applied ASDR values are not applied to the pads
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -443,6 +421,8 @@ void PluginProcessor::loadFile (const juce::String& path, int midiNote)
         0.1,
         10.0));
 
+    mCurrentMidiNoteForDisplay.store (midiNote, std::memory_order_relaxed);
+
     std::printf ("Sound added to sampler. Total sounds: %d\n", mSampler.getNumSounds());
 }
 
@@ -529,11 +509,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         auto decayId = "DECAY_PAD_" + padIdStr;
         auto sustainId = "SUSTAIN_PAD_" + padIdStr;
         auto releaseId = "RELEASE_PAD_" + padIdStr;
+        auto muteId = "MUTE_PAD_" + padIdStr;
+        auto soloId = "SOLO_PAD_" + padIdStr;
 
         params.push_back (std::make_unique<juce::AudioParameterFloat> (attackId, attackId, attackRange, 0.01f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (decayId, decayId, decayRange, 0.1f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (sustainId, sustainId, sustainRange, 1.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (releaseId, releaseId, releaseRange, 0.3f));
+
+        params.push_back (std::make_unique<juce::AudioParameterBool> (muteId, muteId, false));
+        params.push_back (std::make_unique<juce::AudioParameterBool> (soloId, soloId, false));
     }
 
     return { params.begin(), params.end() };
@@ -546,7 +531,7 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
 
     if (lastUnderscore != std::string::npos && lastUnderscore > 0)
     {
-        if (idStr.find ("ATTACK_PAD_") == 0 || idStr.find ("DECAY_PAD_") == 0 || idStr.find ("SUSTAIN_PAD_") == 0 || idStr.find ("RELEASE_PAD_") == 0)
+        if (idStr.find ("ATTACK_PAD_") == 0 || idStr.find ("DECAY_PAD_") == 0 || idStr.find ("SUSTAIN_PAD_") == 0 || idStr.find ("RELEASE_PAD_") == 0 || idStr.find ("MUTE_PAD_") || idStr.find ("SOLO_PAD_"))
         {
             std::string padNumStr = idStr.substr (lastUnderscore + 1);
             try
@@ -599,6 +584,48 @@ void PluginProcessor::updateADSRForPadOnAudioThread (int padId)
     {
         printf ("AudioThread: Warning - No SamplerSound found for Pad %d (MIDI %d) to update ADSR.\n", padId, midiNote);
     }
+}
+
+bool PluginProcessor::isPadMuted (int padId)
+{
+    if (padId < 1 || padId > numVoices)
+    {
+        return false; // Invalid pad ID
+    }
+    auto muteId = "MUTE_PAD_" + std::to_string (padId);
+    auto* param = mAPVTS.getParameter (muteId);
+    if (auto* boolParam = dynamic_cast<juce::AudioParameterBool*> (param))
+    {
+        return boolParam->get();
+    }
+    return false;
+}
+
+bool PluginProcessor::isPadSoloed (int padId)
+{
+    if (padId < 1 || padId > numVoices)
+    {
+        return false; // Invalid pad ID
+    }
+    auto soloId = "SOLO_PAD_" + std::to_string (padId);
+    auto* param = mAPVTS.getParameter (soloId);
+    if (auto* boolParam = dynamic_cast<juce::AudioParameterBool*> (param))
+    {
+        return boolParam->get();
+    }
+    return false;
+}
+
+bool PluginProcessor::isAnyPadSoloed()
+{
+    for (int i = 1; i <= numVoices; ++i)
+    {
+        if (isPadSoloed (i))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 //==============================================================================

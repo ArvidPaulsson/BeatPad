@@ -9,8 +9,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (waveThumbnail);
     addAndMakeVisible (beatPadContainer);
 
-    // Because the BeatPadContainer creates the pads, which in their turn create the ADSR components, we need to be able to access the adsr components and set their visibility when a pad is triggered
-
     setResizable (true, true);
     setResizeLimits (600, 400, 1918, 1050);
 

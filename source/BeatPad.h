@@ -25,10 +25,12 @@ public:
     // Getters
     int getPadId() { return padId; }
     int getMidiNote() { return midiNote; }
-    juce::String getPadText() { return padText; }
+    juce::String getPadText() { return beatPadDisplayName; }
     bool getSampleLoaded() { return sampleLoaded; }
     bool getIsTriggered() { return isTriggered; }
     juce::String getBeatPadFileName() { return beatPadFileName; }
+
+    void setHighlight (bool shoudlHighlight);
 
 private:
     PluginProcessor& processorRef;
@@ -47,10 +49,17 @@ private:
 
     int padId { -1 };
     int midiNote { -1 };
-    juce::String padText = "Drop a sample here";
     bool sampleLoaded { false };
     bool isTriggered { false };
     juce::String beatPadFileName;
+    juce::String beatPadDisplayName;
+    bool isHighlighted { false };
+
+    juce::TextButton muteButton;
+    juce::TextButton soloButton;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BeatPad)
 };

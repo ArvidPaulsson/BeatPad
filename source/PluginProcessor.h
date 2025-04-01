@@ -51,11 +51,13 @@ public:
 
     juce::AudioBuffer<float>* getWaveformForNote (int midiNote);
     juce::AudioBuffer<float>* getCurrentWaveForm();
+    std::atomic<int>& getSampleCount() { return mSampleCount; }
     int getCurrentMidiNote();
 
     void updateADSR (int padId);
-
-    std::atomic<int>& getSampleCount() { return mSampleCount; }
+    bool isPadMuted (int padId);
+    bool isPadSoloed (int padId);
+    bool isAnyPadSoloed();
 
 private:
     juce::Synthesiser mSampler;
@@ -76,6 +78,9 @@ private:
     juce::AudioBuffer<float> currentWaveForm;
     const int numVoices { 9 };
 
+    int mNoteOfTrackedVoice { -1 };
+    juce::SynthesiserVoice* mVoicePlayingDisplayNote { nullptr };
+
     std::atomic<bool> mShouldUpdate { false };
     std::atomic<bool> mIsNotePlayed { false };
     std::atomic<int> mSampleCount { 0 };
@@ -89,4 +94,3 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
-;

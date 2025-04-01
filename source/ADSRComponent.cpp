@@ -74,41 +74,32 @@ void ADSRComponent::paint (juce::Graphics& g)
 
 void ADSRComponent::resized()
 {
-    const int kMargin = 10; // Margin around the edges
-    const int kSliderSpacing = 8; // Space between sliders horizontally
+    const int kMargin = 10;
+    const int kSliderSpacing = 8;
     const int kNumSliders = 4;
-    // Increase this value to push labels further down by making sliders shorter
-    const int kSpaceBelowSliders = 25; // << ADJUST THIS VALUE (pixels)
 
-    auto bounds = getLocalBounds(); // Get total area
+    const int kSpaceBelowSliders = 25;
 
-    // Reduce bounds by margin (on all sides)
+    auto bounds = getLocalBounds();
+
     bounds.reduce (kMargin, kMargin);
 
-    // Calculate available width for sliders (total width - spacing between them)
     int totalSpacing = kSliderSpacing * (kNumSliders - 1);
     int availableWidth = bounds.getWidth() - totalSpacing;
     int sliderWidth = availableWidth / kNumSliders;
 
-    // Calculate slider height, ensuring space is left below them
     int sliderHeight = bounds.getHeight() - kSpaceBelowSliders;
-    // Ensure height is not negative if component is too small
-    sliderHeight = juce::jmax (10, sliderHeight); // Minimum height of 10 pixels
+    sliderHeight = juce::jmax (10, sliderHeight);
 
-    // Calculate starting Y position for sliders (at the top of the reduced bounds)
     int sliderY = bounds.getY();
 
-    // Calculate starting X position for the first slider
     int currentX = bounds.getX();
 
-    // Set bounds for each slider
-    // Using sliderWidth for both width and height to aim for square-ish dials
     int dialSize = juce::jmin (sliderWidth, sliderHeight);
-    // Recenter vertically if making them square
     sliderY += (sliderHeight - dialSize) / 2;
 
     attackSlider.setBounds (currentX, sliderY, dialSize, dialSize);
-    currentX += sliderWidth + kSliderSpacing; // Still advance by original width slot + spacing
+    currentX += sliderWidth + kSliderSpacing;
     decaySlider.setBounds (currentX, sliderY, dialSize, dialSize);
     currentX += sliderWidth + kSliderSpacing;
     sustainSlider.setBounds (currentX, sliderY, dialSize, dialSize);

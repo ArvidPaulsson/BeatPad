@@ -11,7 +11,6 @@ WaveThumbnail::~WaveThumbnail()
 
 void WaveThumbnail::paint (juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll (juce::Colours::cadetblue.darker());
     if (processorRef.getCurrentMidiNote() != -1)
     {
@@ -54,7 +53,6 @@ void WaveThumbnail::drawThumbnail (juce::Graphics& g, juce::AudioBuffer<float>& 
         g.setColour (juce::Colours::white);
         g.setFont (15.0f);
         auto textBounds = getLocalBounds().reduced (10, 10);
-        // g.drawFittedText (mFileName, textBounds, juce::Justification::topRight, 1);
 
         auto playHeadPosition = juce::jmap<int> (processorRef.getSampleCount().load(), 0, processorRef.getCurrentWaveForm()->getNumSamples(), 0, getWidth());
 

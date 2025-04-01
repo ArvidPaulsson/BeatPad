@@ -155,6 +155,8 @@ target_link_libraries(SharedCode
 # Link the JUCE plugin targets our SharedCode target
 target_link_libraries("${PROJECT_NAME}" PRIVATE SharedCode)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # IPP support, comment out to disable
 include(PamplejuceIPP)
 
