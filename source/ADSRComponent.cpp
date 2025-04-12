@@ -1,6 +1,7 @@
 #include "ADSRComponent.h"
 
-ADSRComponent::ADSRComponent (PluginProcessor& p, int padId) : processorRef (p), padId (padId)
+ADSRComponent::ADSRComponent (PluginProcessor& p, int padId)
+    : processorRef (p), padId (padId)
 {
     std::printf ("Creating ADSR for pad %d\n", padId);
     std::string padStr = std::to_string (padId);

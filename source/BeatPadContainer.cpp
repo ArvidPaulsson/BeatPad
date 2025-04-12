@@ -6,12 +6,17 @@ BeatPadContainer::BeatPadContainer (PluginProcessor& p)
     for (int i = 0; i < nbrOfPads; i++)
     {
         auto pad = std::make_unique<BeatPad> (processorRef, i + 1);
-        auto adsrComponent = std::make_unique<ADSRComponent> (processorRef, i + 1);
+        // auto adsrComponent = std::make_unique<ADSRComponent> (processorRef, i + 1);
+        auto fxTab = std::make_unique<FXTab> (processorRef, i + 1);
         addAndMakeVisible (pad.get());
-        addAndMakeVisible (adsrComponent.get());
-        adsrComponent.get()->setVisible (false);
-        adsrComponents.push_back (std::move (adsrComponent));
-        pad->onSelected = [this] (int padId) { updateADSRVisibility (padId); };
+        addAndMakeVisible (fxTab.get());
+        // addAndMakeVisible (adsrComponent.get());
+        // adsrComponent.get()->setVisible (false);
+        fxTab.get()->setVisible (false);
+        // adsrComponents.push_back (std::move (adsrComponent));
+        fxTabs.push_back (std::move (fxTab));
+        // pad->onSelected = [this] (int padId) { updateADSRVisibility (padId); };
+        pad->onSelected = [this] (int padId) { updateFXTabVisibility (padId); };
         pads.push_back (std::move (pad));
     }
 }
@@ -48,11 +53,12 @@ void BeatPadContainer::resized()
     }
     if (currentPadId != -1)
     {
-        auto adsrComponent = getADSRComponent (currentPadId);
+        // auto adsrComponent = getADSRComponent (currentPadId);
+        auto fxTab = getFXTab (currentPadId);
         std::printf ("Current pad ID: %d\n", currentPadId);
-        if (adsrComponent)
+        if (fxTab)
         {
-            adsrComponent->setBounds (area);
+            fxTab->setBounds (area);
         }
     }
 }
@@ -67,6 +73,56 @@ void BeatPadContainer::setPadColors (juce::Colour normal, juce::Colour triggered
 
 BeatPad BeatPadContainer::getPad (int index)
 {
+}
+
+FXTab* BeatPadContainer::getFXTab (int index)
+{
+    if (index > 0 && index <= fxTabs.size())
+    {
+        std::printf ("FX Tab found\n");
+        return fxTabs[index - 1].get();
+    }
+    return nullptr;
+}
+
+void BeatPadContainer::updateFXTabVisibility (int padId)
+{
+    // Hide previously visible ADSR component if it exists
+    if (currentPadId != -1 && currentPadId != padId)
+    {
+        auto previousFXTab = getFXTab (currentPadId);
+        if (previousFXTab)
+        {
+            previousFXTab->setVisible (false);
+        }
+    }
+
+    auto newFXTab = getFXTab (padId);
+    if (newFXTab)
+    {
+        newFXTab->setVisible (true);
+        currentPadId = padId;
+        for (int i = 0; i < pads.size(); ++i)
+        {
+            if (pads[i] != nullptr)
+            {
+                pads[i]->setHighlight ((i + 1) == padId);
+            }
+        }
+        // -----------------------------
+
+        resized();
+        repaint();
+    }
+    else
+    {
+        currentPadId = -1;
+        for (int i = 0; i < pads.size(); ++i)
+        {
+            if (pads[i] != nullptr)
+                pads[i]->setHighlight (false);
+        }
+    }
 }
 
 ADSRComponent* BeatPadContainer::getADSRComponent (int index)

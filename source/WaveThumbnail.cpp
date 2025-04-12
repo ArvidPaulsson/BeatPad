@@ -52,7 +52,6 @@ void WaveThumbnail::drawThumbnail (juce::Graphics& g, juce::AudioBuffer<float>& 
         g.strokePath (p, juce::PathStrokeType (2));
         g.setColour (juce::Colours::white);
         g.setFont (15.0f);
-        auto textBounds = getLocalBounds().reduced (10, 10);
 
         auto playHeadPosition = juce::jmap<int> (processorRef.getSampleCount().load(), 0, processorRef.getCurrentWaveForm()->getNumSamples(), 0, getWidth());
 

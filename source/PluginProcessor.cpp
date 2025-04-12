@@ -628,6 +628,17 @@ bool PluginProcessor::isAnyPadSoloed()
     return false;
 }
 
+double PluginProcessor::getSampleLengthSeconds (int midiNote)
+{
+    auto it = mSampleWaveforms.find (midiNote);
+    if (it != mSampleWaveforms.end())
+    {
+        auto waveform = it->second.get();
+        return static_cast<double> (waveform->getNumSamples()) / getSampleRate();
+    }
+    return 0.0;
+}
+
 //==============================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

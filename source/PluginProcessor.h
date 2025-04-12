@@ -9,6 +9,7 @@
 
 class PluginProcessor : public juce::AudioProcessor,
                         public juce::AudioProcessorValueTreeState::Listener
+
 {
 public:
     PluginProcessor();
@@ -52,6 +53,7 @@ public:
     juce::AudioBuffer<float>* getWaveformForNote (int midiNote);
     juce::AudioBuffer<float>* getCurrentWaveForm();
     std::atomic<int>& getSampleCount() { return mSampleCount; }
+    double getSampleLengthSeconds (int midiNote);
     int getCurrentMidiNote();
 
     void updateADSR (int padId);

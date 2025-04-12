@@ -4,6 +4,7 @@ BeatPad::BeatPad (PluginProcessor& p, int padId)
     : processorRef (p), padId (padId)
 {
     setWantsKeyboardFocus (true);
+    std::printf ("Creating BeatPad %d\n", padId);
 
     muteButton.setButtonText ("M");
     muteButton.setClickingTogglesState (true);

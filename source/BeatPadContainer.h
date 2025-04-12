@@ -2,6 +2,7 @@
 
 #include "ADSRComponent.h"
 #include "BeatPad.h"
+#include "FXTab.h"
 #include "PluginProcessor.h"
 #include <juce_audio_devices/midi_io/juce_MidiDevices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -20,9 +21,11 @@ public:
     void setPadColors (juce::Colour normal, juce::Colour triggered);
 
     void updateADSRVisibility (int padId);
+    void updateFXTabVisibility (int padId);
 
     BeatPad getPad (int index);
     ADSRComponent* getADSRComponent (int padId);
+    FXTab* getFXTab (int padId);
 
 private:
     int nbrOfPads { 9 };
@@ -32,6 +35,7 @@ private:
     // juce::OwnedArray<BeatPad> pads;
     std::vector<std::unique_ptr<BeatPad>> pads;
     std::vector<std::unique_ptr<ADSRComponent>> adsrComponents;
+    std::vector<std::unique_ptr<FXTab>> fxTabs;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BeatPadContainer)
 };
